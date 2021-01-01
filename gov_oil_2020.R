@@ -13,11 +13,13 @@ library(scales)
 
 # http://www.tax.alaska.gov/programs/oil/dailyoil/dailyoil.aspx
 options(scipen=999)
-# setwd("projects/govOil")
+setwd("projects/govOil")
 # 
 # rawOil <- read_csv("data/WTISPLC.csv")
 # rawOil <- read_csv("data/oil_prices - Sheet1.csv") #old
-rawOil <- read_csv("data/oil_prices - Sheet2.csv") ## from Monday, 5/12
+# rawOil <- read_csv("data/oil_prices - Sheet2.csv") ## from Monday, 5/12
+# rawOil <- read_csv("data/oil_prices - Sheet1.csv") ## from Saturday, 10-24
+rawOil <- read_csv("data/oil_prices - Sheet4.csv") ## from 12/25
 rawGov <- read_csv("data/govEnd_2020.csv")
 
 
@@ -57,7 +59,8 @@ gov_oil <- gov_oil %>% mutate(year = year(date))
 gov_oil <- gov_oil %>% mutate(oil_value=production*ans)
 gov_oil <- gov_oil %>% ungroup() %>%  mutate(oil_value_roll_30 = rollmean(x=oil_value,k=30, fill=NA))
 gov_oil <- gov_oil %>% ungroup() %>%  mutate(ans_roll_60 = rollmean(x=ans,k=60, fill=NA))
-gov_oil <- gov_oil %>% ungroup() %>%  mutate(ans_roll_30 = rollmean(x=ans,k=30, fill=NA))
+gov_oil <- gov_oil %>% ungroup() %>%  mutate(ans_roll_30 = rollmean(x=ans,k=30, fill=NA, align="right"))
+gov_oil <- gov_oil %>% ungroup() %>%  mutate(ans_roll_20 = rollmean(x=ans,k=20, fill=NA))
 gov_oil <- gov_oil %>% ungroup() %>%  mutate(ans_roll_10 = rollmean(x=ans,k=10, fill=NA, align="right"))
 gov_oil <- gov_oil %>% ungroup() %>%  mutate(relative_percent_roll_30 = rollmean(x=relative_percent,k=30, align="right", fill=NA))
 gov_oil <- gov_oil %>% ungroup() %>%  mutate(relative_percent_roll_10 = rollmean(x=relative_percent,k=10, align="right", fill=NA))
@@ -70,6 +73,36 @@ gov_oil <- gov_oil %>% rowwise() %>%  mutate (last_name = str_split(name, " ")[[
 
 gov_oil$name <- factor(gov_oil$name, levels = c("Tony Knowles", "Frank Murkowski", "Sarah Palin",     "Sean Parnell",    "Bill Walker",    "Mike Dunleavy" ))
 
+
+####inflation adjustmnet
+
+## https://fred.stlouisfed.org/series/CPIAUCSL
+###not seasonaly
+
+##https://fred.stlouisfed.org/series/CPIAUCNS
+
+gov_oil <- gov_oil %>% mutate (month_year = str_sub(date, 1,7) )
+
+# cpi_raw <-read_csv("data/CPIAUCSL.csv") %>% clean_names()
+cpi_raw <-read_csv("data/CPIAUCNS.csv") %>% clean_names()
+cpi = cpi_raw
+cpi <- cpi %>% mutate (month_year =  str_sub(date, 1,7))  %>% select(-date)
+
+gov_oil <- gov_oil %>%  left_join(cpi, by="month_year")
+
+# gov_oil <- gov_oil %>% mutate(cpiaucsl = ifelse(month_year == "2020-12", 260.817, cpiaucsl))
+gov_oil <- gov_oil %>% mutate(cpiaucsl = ifelse(month_year == "2020-12", 260.229, cpiaucns))
+
+##calculate ratioof today price, 
+gov_oil <- gov_oil %>% mutate (ans_2020 = ans*(260.229/cpiaucns ))
+
+
+
+
+
+
+
+
 gov_oil_prices <- gov_oil %>% select( ans)
 
 # gov_oil_drawdowns <- drawdowns(gov_oil_prices$ans)
@@ -81,6 +114,12 @@ gov_oil_copy = gov_oil
 
 
 unq_gov <- unique(gov_oil$name)
+
+gov_oil_1_million <- gov_oil %>% filter (production>=1e6)
+
+
+# View(gov_oil_1_million)
+
 
 # custPal <- c('#9e0142','#d53e4f','#f46d43','#fdae61','#fee08b','#ffffbf','#e6f598','#abdda4','#66c2a5','#3288bd','#5e4fa2', "#ffffff", '#8e0152')
 # benPal <- colorRampPalette(c("blue", "red"))( 13)
@@ -115,6 +154,12 @@ brewer_set <- c(
   "#e41a1c"
 )
 
+###this is my new palete. 
+# brewer_set <- c(
+#   '#65ADC2', '#233B43', 
+#   '#C29365','#6b3241'
+#   , "#109B37",
+#   "#c92a62")
 
 # brewer_set <- c(      "#056e12", "#421674", "#273b61", "#d6782f", "#e51d1d")
 
@@ -148,7 +193,7 @@ percent_plot <- ggplot(gov_oil)+
   geom_hline(yintercept=1,linetype="dotted", size=.3, color="gray" )+
   geom_hline(yintercept=0,linetype="dotted", size=.3, color="gray" )+
   # theme_void()+
-  geom_text(aes(x=as.numeric(relative_date), y=relative_percent_roll_30, label=last_name, group=name, color= name), hjust = -.1, size=11, fontface = "bold", show.legend = F)+
+  geom_text(aes(x=as.numeric(relative_date), y=relative_percent_roll_30, label=last_name, group=name, color= name), hjust = -.1, size=14, fontface = "bold", show.legend = F)+
   scale_colour_manual(values=brewer_set)+
   scale_fill_manual(values=brewer_set)+
   
@@ -180,7 +225,9 @@ percent_plot <- ggplot(gov_oil)+
 
   
 stacked_gov <- animate(percent_plot, nframes=200, fps=16, width=1550, height=1000)
-anim_save(animation = stacked_gov, "plots/percent_bold_label_200_16_roll.gif")
+anim_save("plots/percent_bold_label_200_16_roll.gif")
+# magick::image_write(stacked_gov, path="plot/percent_bold_label_200_16_roll.gif")
+
 
 
 
@@ -188,7 +235,7 @@ anim_save(animation = stacked_gov, "plots/percent_bold_label_200_16_roll.gif")
 
 
 facet_plot <- ggplot(gov_oil)+
-  geom_line(aes(x=as.numeric(relative_date), y=relative_percent, group=name, color=name), size=1, show.legend = F)+
+  geom_line(aes(x=as.numeric(relative_date), y=relative_percent, group=name, color=name), size=.4, show.legend = F)+
   # scale_colour_brewer(palette="Set1")+
   # transition_reveal(month, percentChange) +
   theme_minimal()+
@@ -244,7 +291,7 @@ dollar_plot <- ggplot(gov_oil)+
   geom_hline(yintercept=100,linetype="dotted", size=1, color="gray" )+
   geom_hline(yintercept=50,linetype="dotted", size=1, color="gray" )+
   geom_hline(yintercept=150,linetype="dotted", size=1, color="gray" )+
-  geom_text(aes(x=as.numeric(relative_date), y=ans_roll_10, label=last_name, group=name, color= name), size=11, hjust =-.1, fontface = "bold", show.legend = F)+
+  geom_text(aes(x=as.numeric(relative_date), y=ans_roll_30, label=last_name, group=name, color= name), size=14, hjust =-.1, fontface = "bold", show.legend = F)+
   scale_colour_manual(values=brewer_set)+
   scale_fill_manual(values=brewer_set)+
   
@@ -286,8 +333,10 @@ ggplot(gov_oil)+
   geom_hline(yintercept=100,linetype="dotted", size=1, color="gray" )+
   geom_hline(yintercept=50,linetype="dotted", size=1, color="gray" )+
   geom_hline(yintercept=150,linetype="dotted", size=1, color="gray" )+
-  geom_dl(data  =  gov_oil %>% filter (name!= "Frank Murkowski"), aes(x=as.numeric(relative_date), y=ans, label=last_name, group=name, color= name), size=11, face = "bold", method=list("last.bumpup", cex=1.8, fontface="bold",  hjust =-.1, vjust =-.1), show.legend = F)+
-  geom_dl(data =  gov_oil %>% filter (name== "Frank Murkowski"), aes( x=as.numeric(relative_date), y=ans, label=last_name, group=name, color= name), size=11, face = "bold", method=list("last.bumpup", cex=1.8, fontface="bold",  hjust =-.1, vjust =1), show.legend = F)+
+    geom_dl(data =  gov_oil %>% filter (name != "Bill Walker"), aes( x=as.numeric(relative_date), y=ans, label=last_name, group=name, color= name), size=11, face = "bold", method=list("last.bumpup", cex=2.2, fontface="bold",  hjust =-.2, vjust =.1), show.legend = F)+
+    geom_text (aes(x= (365*4+100), y=70, label= "Walker"), color="#f77b00", size=9, fontface="bold")+
+  # geom_dl(data  =  gov_oil %>% filter (name== "Bill Walker"), aes(x=as.numeric(relative_date), y=ans, label=name, group=last_name, color= name), size=11, face = "bold", method=list("top.points", cex=1.8, fontface="bold",  hjust =-.1, vjust =0), show.legend = F)+
+    
   scale_colour_manual(values=brewer_set)+
   scale_fill_manual(values=brewer_set)+
     # xlim(-100,1800)+
@@ -315,6 +364,48 @@ dollar_static()
 
 
 
+  ###inflation adjusted
+dollar_static_2020 <- function (){
+  
+  ggplot(gov_oil)+
+    geom_line(aes(x=as.numeric(relative_date), y=ans_2020, group=name, color=name), show.legend = F)+
+    # scale_colour_brewer(palette="Set1")+
+    # transition_reveal(month, percentChange) +
+    theme_minimal()+
+    geom_hline(yintercept=100,linetype="dotted", size=1, color="gray" )+
+    geom_hline(yintercept=50,linetype="dotted", size=1, color="gray" )+
+    geom_hline(yintercept=150,linetype="dotted", size=1, color="gray" )+
+    geom_dl(data  =  gov_oil %>% filter (name!= "Frank Murkowski"), aes(x=as.numeric(relative_date), y=ans, label=last_name, group=name, color= name), size=11, face = "bold", method=list("last.bumptwice", cex=2.2, fontface="bold",  hjust =-.1, vjust =-.1), show.legend = F)+
+    geom_dl(data =  gov_oil %>% filter (name== "Frank Murkowski"), aes( x=as.numeric(relative_date), y=ans, label=last_name, group=name, color= name), size=11, face = "bold", method=list("last.bumpup", cex=2.2, fontface="bold",  hjust =-.1, vjust =1), show.legend = F)+
+    scale_colour_manual(values=brewer_set)+
+    scale_fill_manual(values=brewer_set)+
+    # xlim(-100,1800)+
+    
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.text.x= element_text(face="bold"))+
+    scale_x_continuous(limits =  c(-100, 2100), breaks = c(365, 730, 1096, 1460, 1825),  labels= c("Year 1", "Year 2", "Year 3", "Year 4", "Year 5"))+
+    scale_y_continuous(labels=NULL)+
+    ylab(" ")+
+    xlab(" ")+
+    
+    # theme(text=element_text(family="Fira Sans", size=14, face = "bold"))+
+    geom_text(aes(x=-10, y=0, label="$0"), size=9)+
+    geom_text(aes(x=-50, y=50, label="$50"),size=9)+
+    geom_text(aes(x=-50, y=100, label="$100"),size=9)+
+    geom_text(aes(x=-50, y=150, label="$150"),size=9)+
+    # geom_text(aes(x=-500, y=-.5, label="-50%"),size=13)+
+    theme(plot.margin = unit(c(.3,.3,.3,.3), "cm"))+
+    theme( text = element_text(size = 20),
+           plot.title = element_text(family="IBM Plex Sans Medium",size=45, color="#333333"))+
+    labs(title= "Oil Prices for Alaska Governors", subtitle = "Alaska North Slope Daily Price, Adjusted to 2020 Dollars.",  caption="Data: Alaska Department of Revenue")+
+    ggsave("plots/dollar_2020_inflation_adjusted.png", width=15, height=10, dpi=300, units = "in")}
+
+dollar_static_2020()
+
+
+
+
+
+
 # gov_oil <- gov_oil %>% mutate(relative_date_num = as.numeric(relative_date))
 
 percent_static <- function () {
@@ -328,7 +419,7 @@ percent_static <- function () {
     geom_hline(yintercept=1,linetype="dotted", size=1, color="gray" )+
     geom_hline(yintercept=0,linetype="dotted", size=1, color="gray" )+
     # theme_void()+
-    geom_dl(aes(x=as.numeric(relative_date), y=relative_percent, label=last_name, group=name, color= name), size=10, face = "bold", method=list("last.bumpup", cex=1.8, fontface="bold",  hjust =-.1), show.legend = F)+
+    geom_dl(aes(x=as.numeric(relative_date), y=relative_percent, label=last_name, group=name, color= name), size=10, face = "bold", method=list("last.bumpup", cex=2.2, fontface="bold",  hjust =-.1), show.legend = F)+
     scale_colour_manual(values=brewer_set)+
     scale_fill_manual(values=brewer_set)+
     scale_x_continuous(limits = c(-100, 2100), breaks = c(365, 730, 1096, 1460, 1825),  labels= c("Year 1", "Year 2", "Year 3", "Year 4", "Year 5"))+
@@ -369,7 +460,7 @@ ggplot(gov_oil)+
 
 # scale="count",
 ggplot(gov_oil, aes(x=oil_value, y=name, fill = name, color=name), show.legend = F)+
-  geom_violin(aes(y=ans, x=name, fill = name, color=name), scale = "count", show.legend = F)+
+  geom_violin(aes(y=ans, x=last_name, fill = name, color=name), scale = "count", show.legend = F)+
   # geom_density_ridges2(panel_scaling = T, stat="binline")+
   # coord_flip() + # This switch X and Y axis and allows to get the horizontal version
   scale_color_manual(values=brewer_set)+
@@ -377,13 +468,14 @@ ggplot(gov_oil, aes(x=oil_value, y=name, fill = name, color=name), show.legend =
   # theme_minimal()+
   theme_ridges() +
   scale_y_continuous(labels=dollar_format())+
-  theme( text = element_text(size = ),
-         plot.title = element_text(family="IBM Plex Sans Medium",size=27, color="#333333"), plot.subtitle = element_text(margin = margin(.1,.1,3,.1)))+
+  theme( text = element_text(size =22 ),
+         plot.title = element_text(family="IBM Plex Sans Medium",size=38, color="#333333"), plot.subtitle = element_text(margin = margin(.1,.1,3,.1)),          axis.text = element_text(size = 22)
+)+
   # scale_y_continuous(labels=dollar_format())+
   ylab(" ")+
   xlab(" ")+
-  labs(title= "Oil Prices for Alaska Governors' Terms", subtitle = "Alaska North Slope Daily Price, not adjusted for inflation or anything.",  caption="Data: Alaska Department of Revenue")+
-  ggsave("plots/violin_2020.png", width=10, height=5, dpi=300, units = "in")
+  labs(title= "Oil Prices for Alaska Governors", subtitle = "Alaska North Slope Daily Price, not adjusted for inflation or anything.",  caption="Data: Alaska Department of Revenue")+
+  ggsave("plots/violin_2020.png", width=10, height=10, dpi=300, units = "in")
 
 
 # 
@@ -480,17 +572,58 @@ time_plot <- ggplot(gov_oil)+
   # geom_text(aes(x=-50, y=50, label="$50"),size=13)+
   # geom_text(aes(x=-50, y=100, label="$100"),size=13)+
   # geom_text(aes(x=-50, y=150, label="$150"),size=13)+
-  geom_dl(aes(x=date, y=ans, color=name, label=name),method=list("top.points", cex=1.5, vjust=-1, hjust=.4,fontface="bold"))+
+  geom_dl(aes(x=date, y=ans, color=name, label=last_name),method=list("top.points", cex=2.2, vjust=-1, hjust=.4,fontface="bold"))+
   theme(plot.margin = unit(c(.3,1,.3,.3), "cm"))+
   theme( text = element_text(size = 22),
-         plot.title = element_text(family="IBM Plex Sans Medium",size=52, color="#333333"))+
+         plot.title = element_text(family="IBM Plex Sans Medium",size=42, color="#333333"))+
   labs(title = "Oil Prices for Alaska Governors", subtitle ="Dollars per barrel, not adjusted for inflation or anything")+
   xlab (" ")+
   ylab( " ")+
+  scale_y_continuous(labels=scales::dollar_format())+
   ggsave("plots/absolute_2020.png", width=15, height=10, dpi=300, units = "in")
  
 
 time_plot
+
+
+
+time_plot_2020 <- ggplot(gov_oil)+
+  geom_line(aes(x=date, y=ans_2020, group=name, color=name), show.legend = F)+
+  # geom_col(aes(x=date, y=roll_ans_drop_10, group=name, color=name), show.legend = F)+
+  # geom_col(aes(x=date, y=roll_ans_drop_10, group=name, color=name), show.legend = F)+
+  
+  geom_hline(yintercept=100,linetype="dotted", size=.3, color="gray" )+
+  geom_hline(yintercept=50,linetype="dotted", size=.3, color="gray" )+
+  geom_hline(yintercept=150,linetype="dotted", size=.3, color="gray" )+
+  theme_minimal()+
+  ylab("Oil Price for Alaska Governors")+
+  # geom_text(aes(x=as.numeric(relative_date), y=ans, label=last_name, group=name, color= name), size=11, hjust =-.1, face = "bold", show.legend = F)+
+  scale_colour_manual(values=brewer_set)+
+  scale_fill_manual(values=brewer_set)+
+  
+  # # theme(text=element_text(family="Fira Sans", size=14, face = "bold"))+
+  # geom_text(aes(x=-10, y=0, label="$0"), size=13)+
+  # geom_text(aes(x=-50, y=50, label="$50"),size=13)+
+  # geom_text(aes(x=-50, y=100, label="$100"),size=13)+
+  # geom_text(aes(x=-50, y=150, label="$150"),size=13)+
+  geom_dl(aes(x=date, y=ans_2020, color=name, label=last_name),method=list("top.points", cex=2.2, vjust=0, hjust=.4,fontface="bold"))+
+  theme(plot.margin = unit(c(.3,1,.3,.3), "cm"))+
+  theme( text = element_text(size = 22),
+         plot.title = element_text(family="IBM Plex Sans Medium",size=42, color="#333333"))+
+  labs(title = "Real Oil Prices for Alaska Governors", subtitle ="Dollars per barrel, *Adjusted to 2020 Dollars*")+
+  xlab (" ")+
+  ylab( " ")+
+  scale_y_continuous(labels=scales::dollar_format())+
+  ggsave("plots/inflation_adjusted_2020.png", width=15, height=10, dpi=300, units = "in")
+
+
+time_plot_2020
+
+
+
+
+
+
 
 
 
@@ -515,16 +648,15 @@ price_plot <- ggplot(gov_oil_summary_gov)+
   # geom_text(aes(x=-50, y=100, label="$100"),size=13)+
   # geom_text(aes(x=-50, y=150, label="$150"),size=13)+
   # geom_dl(aes(x=date, y=ans, color=name, label=name),method=list("smart.grid", cex=1.5, fontface="bold"))+
-  theme(plot.margin = unit(c(1,1,1,1), "cm"))+
-  theme( text = element_text(size = 20),
-         plot.title = element_text(family="IBM Plex Sans Medium",size=40, color="#333333"))+
+  theme(plot.margin = unit(c(.3,.3,.3,.3), "cm"))+
+  theme( text = element_text(size = 22),
+         axis.text = element_text(size = 22),
+         plot.title = element_text(family="IBM Plex Sans Medium",size=30, color="#333333", hjust = 3))+
   xlab(" ")+
   ylab("Average Daily ANS Price Per Barrel")+
   scale_y_continuous(labels=dollar_format())+
-  labs(title = "Average Oil Prices for Alaska Governors", subtitle ="Dollars per barrel, not adjusted for inflation or anything")+
-  ggsave("plots/bar_price_2020.png", width=15, height=5, dpi=300, units = "in")
-
-
+  labs(title = "Average Oil Prices for Alaska Governors", subtitle ="Dollars per barrel, nominal prices")+
+  ggsave("plots/bar_price_2020.png", width=10, height=5, dpi=250, units = "in")
 
 price_plot
 
